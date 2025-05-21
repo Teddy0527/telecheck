@@ -1,0 +1,37 @@
+# Virtual environments
+.env
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# Development files
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+
+# Project specific
+README.md
+*.md
+service_account.json.sample
+.env.sample
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# OS files
+.DS_Store
+Thumbs.db 
