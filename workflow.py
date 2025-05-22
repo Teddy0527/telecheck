@@ -2,13 +2,35 @@
 import os
 import json
 import textwrap
-import openai
+import httpx
+from openai import OpenAI
 from utils.logger import logger
 from prompts import SYSTEM_PROMPTS
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# 環境変数からプロキシ設定を一時的に保存して削除
+proxy_env_vars = {}
+for var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'ALL_PROXY']:
+    if var in os.environ:
+        proxy_env_vars[var] = os.environ[var]
+        del os.environ[var]
+
+# カスタムHTTPクライアントを作成（プロキシなし）
+http_client = httpx.Client(
+    timeout=60.0,
+    follow_redirects=True
+)
+
+# OpenAIクライアントの初期化（カスタムHTTPクライアントを使用）
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    http_client=http_client
+)
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
+
+# 環境変数のプロキシ設定を復元（必要であれば）
+# for var, value in proxy_env_vars.items():
+#     os.environ[var] = value
 
 # ---------- helpers ----------
 
@@ -22,11 +44,23 @@ def whisper_transcribe(file_bytes: bytes) -> str:
     Returns:
         str: Full transcript text
     """
-    resp = openai.audio.transcriptions.create(
-        model=WHISPER_MODEL,
-        file=("audio.wav", file_bytes, "audio/wav")
-    )
-    return resp.text
+    try:
+        resp = client.audio.transcriptions.create(
+            model=WHISPER_MODEL,
+            file=("audio.wav", file_bytes, "audio/wav")
+        )
+        return resp.text
+    except Exception as e:
+        logger.error(f"Whisper API エラー: {e}")
+        # モデル名が無効な場合、デフォルトモデルを試す
+        if "invalid model ID" in str(e):
+            logger.info("デフォルトモデル 'whisper-1' で再試行します")
+            resp = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=("audio.wav", file_bytes, "audio/wav")
+            )
+            return resp.text
+        raise
 
 
 def _chat(system_prompt, user_prompt, *, expect_json=False, temperature=0.0):
@@ -52,7 +86,7 @@ def _chat(system_prompt, user_prompt, *, expect_json=False, temperature=0.0):
     )
     if expect_json:
         params["response_format"] = {"type": "json_object"}
-    return openai.chat.completions.create(**params).choices[0].message.content.strip()
+    return client.chat.completions.create(**params).choices[0].message.content.strip()
 
 # ---------- node wrappers ----------
 
